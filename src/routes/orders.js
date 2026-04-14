@@ -1,5 +1,6 @@
 const express = require('express');
 const Order = require('../models/Order');
+const Table = require('../models/Table');
 const { auth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
 
@@ -8,7 +9,22 @@ const router = express.Router();
 // POST /api/orders — 주문 생성 (고객용, 인증 불필요)
 router.post('/', async (req, res) => {
   try {
-    const { tableId, tableNumber, floor, items } = req.body;
+    const { tableId, tableNumber, floor, items, sessionStartedAt } = req.body;
+
+    const table = await Table.findById(tableId);
+    if (!table) {
+      return res.status(404).json({ message: '테이블을 찾을 수 없습니다' });
+    }
+    if (
+      table.lastClearedAt &&
+      (!sessionStartedAt ||
+        new Date(table.lastClearedAt).getTime() > new Date(sessionStartedAt).getTime())
+    ) {
+      return res.status(409).json({
+        code: 'SESSION_EXPIRED',
+        message: '테이블이 정리되었습니다. QR을 다시 스캔해주세요.',
+      });
+    }
 
     // 총 금액 계산
     const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -85,9 +101,13 @@ router.get('/', auth, async (req, res) => {
 router.get('/table/:tableId', async (req, res) => {
   try {
     const { after } = req.query;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startTime = after && new Date(after) > today ? new Date(after) : today;
+    let startTime;
+    if (after) {
+      startTime = new Date(after);
+    } else {
+      startTime = new Date();
+      startTime.setHours(0, 0, 0, 0);
+    }
     const orders = await Order.find({
       tableId: req.params.tableId,
       createdAt: { $gte: startTime },

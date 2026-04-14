@@ -44,7 +44,7 @@ server/src/
 ├── middleware/
 │   └── auth.js        # JWT 인증 + adminOnly 미들웨어
 ├── models/
-│   ├── Admin.js       # email, password(bcrypt), name, role(owner/staff)
+│   ├── Admin.js       # email(아이디, 대소문자 구분), password(bcrypt), name, role(owner/staff)
 │   ├── Category.js    # name, slug(자동), order, isActive
 │   ├── Product.js     # name, price, image(S3), categoryIds[], badges[], stock, isSoldOut, showOnKiosk, showOnTable
 │   ├── Order.js       # tableId, items[], totalPrice, status(pending→accepted→preparing→ready→served/cancelled)
@@ -53,13 +53,17 @@ server/src/
 │   └── Notice.js      # content, isActive
 └── routes/
     ├── auth.js        # POST /register, /login
+    ├── admins.js      # 관리자 CRUD (목록/생성/수정/삭제, 자기 자신 삭제 방지)
     ├── products.js    # CRUD + reorder + sold-out + toggle-channel
     ├── categories.js  # CRUD + reorder
-    ├── orders.js      # 생성(WS broadcast), 목록, 상태변경(WS broadcast)
-    ├── tables.js      # CRUD + status + token 조회
-    ├── staffCalls.js  # 생성(WS broadcast), 목록, resolve
+    ├── orders.js      # 생성(세션검증 + WS broadcast), 목록, 상태변경(WS broadcast)
+    ├── tables.js      # CRUD + status + token 조회 (lastClearedAt 시 TABLE_CLEARED 브로드캐스트)
+    ├── staffCalls.js  # 생성(세션검증 + WS broadcast), 목록, resolve
     ├── notices.js     # CRUD
     └── upload.js      # S3 이미지 업로드
+
+scripts/
+└── update-order-status.js  # 주문 ID 접미사로 상태 수동 변경 CLI
 ```
 
 ## API 엔드포인트
@@ -67,6 +71,13 @@ server/src/
 ### 인증 (Public)
 - `POST /api/auth/register` - 관리자 계정 생성
 - `POST /api/auth/login` - 로그인 (JWT 반환)
+- 로그인 식별자는 아이디(email 필드, 대소문자 구분). 에러 메시지는 "아이디/비밀번호"로 표기
+
+### 관리자 (Auth)
+- `GET /api/admins` - 관리자 목록 (password 제외)
+- `POST /api/admins` - 관리자 생성
+- `PUT /api/admins/:id` - 관리자 수정 (name, role, password)
+- `DELETE /api/admins/:id` - 관리자 삭제 (자기 자신 삭제 불가)
 
 ### 상품 (GET: Public / 나머지: Auth)
 - `GET /api/products` - 목록 (category, search, channel 필터)
@@ -86,9 +97,9 @@ server/src/
 - `PATCH /api/categories/reorder` - 순서 변경
 
 ### 주문 (POST, GET table: Public / 나머지: Auth)
-- `POST /api/orders` - 생성 (NEW_ORDER 브로드캐스트)
+- `POST /api/orders` - 생성 (sessionStartedAt 검증 → 테이블 정리 후면 409 SESSION_EXPIRED, NEW_ORDER 브로드캐스트)
 - `GET /api/orders` - 목록 (status, date, search, pagination)
-- `GET /api/orders/table/:tableId` - 테이블 당일 주문
+- `GET /api/orders/table/:tableId` - 테이블 주문 목록 (?after=ISO 지정 시 해당 시각 이후, 미지정 시 당일 0시)
 - `GET /api/orders/:id` - 상세
 - `PATCH /api/orders/:id/status` - 상태 변경 (ORDER_STATUS 브로드캐스트)
 
@@ -97,11 +108,11 @@ server/src/
 - `GET /api/tables/status` - 현황 (활성 주문 포함)
 - `GET /api/tables/token/:token` - QR 토큰 조회
 - `POST /api/tables` - 추가
-- `PUT /api/tables/:id` - 수정 (lastClearedAt 설정 시 활성 주문 자동 served)
+- `PUT /api/tables/:id` - 수정 (lastClearedAt 설정 시 활성 주문 자동 served + TABLE_CLEARED 브로드캐스트)
 - `DELETE /api/tables/:id` - 삭제
 
 ### 직원호출 (POST: Public / 나머지: Auth)
-- `POST /api/staff-calls` - 호출 (STAFF_CALL 브로드캐스트)
+- `POST /api/staff-calls` - 호출 (sessionStartedAt 검증 → 테이블 정리 후면 409 SESSION_EXPIRED, STAFF_CALL 브로드캐스트)
 - `GET /api/staff-calls` - 대기 목록
 - `PATCH /api/staff-calls/:id/resolve` - 처리 완료
 
@@ -124,6 +135,7 @@ server/src/
 | NEW_ORDER | 주문 생성 | 주문 객체 |
 | ORDER_STATUS | 상태 변경 | 주문 객체 |
 | STAFF_CALL | 직원 호출 | 호출 객체 |
+| TABLE_CLEARED | 테이블 비우기(lastClearedAt 갱신) | { tableId, lastClearedAt } |
 
 ## 주요 패턴
 
@@ -137,6 +149,12 @@ server/src/
 - Bulk reorder: bulkWrite로 순서 일괄 변경
 - Lean queries: 읽기 전용 쿼리에 .lean() 사용
 - Populate: 참조 데이터 자동 조인
+
+### 테이블 세션 검증
+- 고객 QR 진입 시점을 sessionStartedAt(ISO)으로 클라이언트가 보관
+- POST /api/orders, POST /api/staff-calls는 body에 sessionStartedAt 수신
+- table.lastClearedAt > sessionStartedAt 이면 409 `{ code: 'SESSION_EXPIRED' }` 반환 → 클라이언트는 QR 재스캔 유도
+- 테이블 비우기 시 TABLE_CLEARED 브로드캐스트로 활성 브라우저 세션 즉시 만료
 
 ### 에러 처리
 - try-catch + console.log

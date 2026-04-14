@@ -20,7 +20,7 @@ router.post('/register', async (req, res) => {
 
     const existing = await Admin.findOne({ email });
     if (existing) {
-      return res.status(400).json({ message: '이미 등록된 이메일입니다' });
+      return res.status(400).json({ message: '이미 등록된 아이디입니다' });
     }
 
     const admin = await Admin.create({ email, password, name, role });
@@ -42,12 +42,12 @@ router.post('/login', async (req, res) => {
 
     const admin = await Admin.findOne({ email });
     if (!admin) {
-      return res.status(401).json({ message: '이메일 또는 비밀번호가 올바르지 않습니다' });
+      return res.status(401).json({ message: '아이디 또는 비밀번호가 올바르지 않습니다' });
     }
 
     const isMatch = await admin.comparePassword(password);
     if (!isMatch) {
-      return res.status(401).json({ message: '이메일 또는 비밀번호가 올바르지 않습니다' });
+      return res.status(401).json({ message: '아이디 또는 비밀번호가 올바르지 않습니다' });
     }
 
     const token = generateToken(admin);

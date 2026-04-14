@@ -2,6 +2,7 @@ const express = require('express');
 const Table = require('../models/Table');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
+const { broadcast } = require('../websocket');
 
 const router = express.Router();
 
@@ -93,6 +94,15 @@ router.put('/:id', auth, async (req, res) => {
     if (!table) {
       return res.status(404).json({ message: '테이블을 찾을 수 없습니다' });
     }
+
+    // 비우기가 실행되면 해당 테이블 브라우저 세션에 만료 알림
+    if (req.body.lastClearedAt) {
+      broadcast('TABLE_CLEARED', {
+        tableId: String(table._id),
+        lastClearedAt: table.lastClearedAt,
+      });
+    }
+
     res.json(table);
   } catch (error) {
     res.status(500).json({ message: '테이블 수정 실패', error: error.message });

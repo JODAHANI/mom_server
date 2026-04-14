@@ -1,5 +1,6 @@
 const express = require('express');
 const StaffCall = require('../models/StaffCall');
+const Table = require('../models/Table');
 const { auth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
 
@@ -8,7 +9,22 @@ const router = express.Router();
 // POST /api/staff-calls — 직원 호출 (고객용, 인증 불필요)
 router.post('/', async (req, res) => {
   try {
-    const { tableId, tableNumber, floor } = req.body;
+    const { tableId, tableNumber, floor, sessionStartedAt } = req.body;
+
+    const table = await Table.findById(tableId);
+    if (!table) {
+      return res.status(404).json({ message: '테이블을 찾을 수 없습니다' });
+    }
+    if (
+      table.lastClearedAt &&
+      (!sessionStartedAt ||
+        new Date(table.lastClearedAt).getTime() > new Date(sessionStartedAt).getTime())
+    ) {
+      return res.status(409).json({
+        code: 'SESSION_EXPIRED',
+        message: '테이블이 정리되었습니다. QR을 다시 스캔해주세요.',
+      });
+    }
 
     const call = await StaffCall.create({ tableId, tableNumber, floor });
 

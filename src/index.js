@@ -26,6 +26,7 @@ app.use('/api/orders', require('./routes/orders'));
 app.use('/api/tables', require('./routes/tables'));
 app.use('/api/staff-calls', require('./routes/staffCalls'));
 app.use('/api/notices', require('./routes/notices'));
+app.use('/api/admins', require('./routes/admins'));
 app.use('/api/upload', require('./routes/upload'));
 
 // 헬스 체크

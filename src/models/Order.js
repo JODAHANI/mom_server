@@ -15,6 +15,7 @@ const orderSchema = new mongoose.Schema(
     tableId: { type: mongoose.Schema.Types.ObjectId, ref: 'Table' },
     tableNumber: { type: Number },
     floor: { type: Number },
+    sessionSeq: { type: Number, default: 1 },
     items: [orderItemSchema],
     totalPrice: { type: Number, required: true },
     status: {

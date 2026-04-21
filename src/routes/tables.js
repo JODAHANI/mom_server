@@ -78,19 +78,25 @@ router.get('/token/:token', async (req, res) => {
 // PUT /api/tables/:id — 테이블 수정 (인증 필요)
 router.put('/:id', auth, async (req, res) => {
   try {
-    // 테이블 비우기 시 활성 주문을 served로 일괄 변경
-    if (req.body.lastClearedAt) {
+    const update = { ...req.body };
+
+    // 비우기 시: lastClearedAt을 먼저 갱신해서 새 POST /orders를 차단한 뒤 활성 주문을 스윕
+    if (update.lastClearedAt) {
+      update.currentSessionSeq = 0;
+    }
+
+    const table = await Table.findByIdAndUpdate(req.params.id, update, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (req.body.lastClearedAt && table) {
       const activeStatuses = ['pending', 'accepted', 'preparing', 'ready'];
       await Order.updateMany(
         { tableId: req.params.id, status: { $in: activeStatuses } },
         { status: 'served' }
       );
     }
-
-    const table = await Table.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
     if (!table) {
       return res.status(404).json({ message: '테이블을 찾을 수 없습니다' });
     }

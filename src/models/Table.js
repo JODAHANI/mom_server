@@ -7,6 +7,7 @@ const tableSchema = new mongoose.Schema(
     floor: { type: Number, default: 1 },
     token: { type: String, unique: true },
     currentOrderCount: { type: Number, default: 0 },
+    currentSessionSeq: { type: Number, default: 0 },
     isOccupied: { type: Boolean, default: false },
     lastClearedAt: { type: Date, default: null },
   },

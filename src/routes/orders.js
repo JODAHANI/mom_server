@@ -1,6 +1,7 @@
 const express = require('express');
 const Order = require('../models/Order');
 const Table = require('../models/Table');
+const Product = require('../models/Product');
 const { auth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
 
@@ -11,29 +12,63 @@ router.post('/', async (req, res) => {
   try {
     const { tableId, tableNumber, floor, items, sessionStartedAt } = req.body;
 
-    const table = await Table.findById(tableId);
-    if (!table) {
-      return res.status(404).json({ message: '테이블을 찾을 수 없습니다' });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: '주문 항목이 없습니다' });
     }
-    if (
-      table.lastClearedAt &&
-      (!sessionStartedAt ||
-        new Date(table.lastClearedAt).getTime() > new Date(sessionStartedAt).getTime())
-    ) {
+
+    // 세션 검증 + 시퀀스 atomic 증가 (findOneAndUpdate 조건부 쓰기)
+    const sessionStartDate = sessionStartedAt ? new Date(sessionStartedAt) : null;
+    const tableFilter = { _id: tableId };
+    if (sessionStartDate) {
+      tableFilter.$or = [
+        { lastClearedAt: null },
+        { lastClearedAt: { $lte: sessionStartDate } },
+      ];
+    } else {
+      tableFilter.lastClearedAt = null;
+    }
+
+    const table = await Table.findOneAndUpdate(
+      tableFilter,
+      { $inc: { currentSessionSeq: 1 } },
+      { new: true }
+    );
+
+    if (!table) {
+      // 존재 여부 확인해서 404 / 409 구분
+      const exists = await Table.exists({ _id: tableId });
+      if (!exists) {
+        return res.status(404).json({ message: '테이블을 찾을 수 없습니다' });
+      }
       return res.status(409).json({
         code: 'SESSION_EXPIRED',
         message: '테이블이 정리되었습니다. QR을 다시 스캔해주세요.',
       });
     }
 
-    // 총 금액 계산
-    const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    // 서버에서 최신 Product 가격으로 재계산 (클라 값은 신뢰하지 않음)
+    const productIds = items.map((i) => i.productId || i.product).filter(Boolean);
+    const products = await Product.find({ _id: { $in: productIds } }).lean();
+    const priceMap = new Map(products.map((p) => [String(p._id), p]));
+
+    const safeItems = items.map((item) => {
+      const pid = item.productId || item.product;
+      const p = pid ? priceMap.get(String(pid)) : null;
+      return {
+        productId: pid,
+        name: p?.name || item.name,
+        price: p ? p.price : item.price,
+        quantity: item.quantity,
+      };
+    });
+    const totalPrice = safeItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
     const order = await Order.create({
       tableId,
       tableNumber,
       floor,
-      items,
+      sessionSeq: table.currentSessionSeq,
+      items: safeItems,
       totalPrice,
     });
 
@@ -98,6 +133,8 @@ router.get('/', auth, async (req, res) => {
 });
 
 // GET /api/orders/table/:tableId — 테이블별 주문내역 (고객용, 인증 불필요)
+// after 파라미터: 세션 만료 직후 "방금 내 주문" 조회용 (ExpiredScreen 경로)
+// 없으면 table.lastClearedAt 이후를 반환 — 같은 테이블 모든 기기가 동일한 내역을 봄
 router.get('/table/:tableId', async (req, res) => {
   try {
     const { after } = req.query;
@@ -105,8 +142,13 @@ router.get('/table/:tableId', async (req, res) => {
     if (after) {
       startTime = new Date(after);
     } else {
-      startTime = new Date();
-      startTime.setHours(0, 0, 0, 0);
+      const table = await Table.findById(req.params.tableId).select('lastClearedAt').lean();
+      if (table?.lastClearedAt) {
+        startTime = new Date(table.lastClearedAt);
+      } else {
+        startTime = new Date();
+        startTime.setHours(0, 0, 0, 0);
+      }
     }
     const orders = await Order.find({
       tableId: req.params.tableId,

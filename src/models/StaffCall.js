@@ -10,6 +10,8 @@ const staffCallSchema = new mongoose.Schema(
       enum: ['pending', 'resolved'],
       default: 'pending',
     },
+    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    resolvedAt: { type: Date },
   },
   { timestamps: true }
 );

@@ -5,9 +5,13 @@ const { auth } = require('../middleware/auth');
 const router = express.Router();
 
 // GET /api/categories — 카테고리 목록
+// 기본: 숨김 카테고리 제외 (고객용). ?includeHidden=true 로 전체(관리자용) 조회.
 router.get('/', async (req, res) => {
   try {
-    const categories = await Category.find({ isActive: true }).sort({ order: 1 });
+    const { includeHidden } = req.query;
+    const filter = { isActive: true };
+    if (!includeHidden) filter.isHidden = { $ne: true };
+    const categories = await Category.find(filter).sort({ order: 1 });
     res.json(categories);
   } catch (error) {
     res.status(500).json({ message: '카테고리 목록 조회 실패', error: error.message });
@@ -65,6 +69,21 @@ router.put('/:id', auth, async (req, res) => {
     res.json(category);
   } catch (error) {
     res.status(500).json({ message: '카테고리 수정 실패', error: error.message });
+  }
+});
+
+// PATCH /api/categories/:id/toggle-hidden — 숨김 토글 (인증 필요)
+router.patch('/:id/toggle-hidden', auth, async (req, res) => {
+  try {
+    const category = await Category.findById(req.params.id);
+    if (!category) {
+      return res.status(404).json({ message: '카테고리를 찾을 수 없습니다' });
+    }
+    category.isHidden = !category.isHidden;
+    await category.save();
+    res.json(category);
+  } catch (error) {
+    res.status(500).json({ message: '숨김 상태 변경 실패', error: error.message });
   }
 });
 

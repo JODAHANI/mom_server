@@ -3,6 +3,7 @@ const Table = require('../models/Table');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
+const { printTableQR } = require('../utils/receiptPrinter');
 
 const router = express.Router();
 
@@ -112,6 +113,27 @@ router.put('/:id', auth, async (req, res) => {
     res.json(table);
   } catch (error) {
     res.status(500).json({ message: '테이블 수정 실패', error: error.message });
+  }
+});
+
+// POST /api/tables/:id/print-qr — 테이블 QR 영수증 출력 (인증 필요)
+router.post('/:id/print-qr', auth, async (req, res) => {
+  try {
+    const table = await Table.findById(req.params.id);
+    if (!table) {
+      return res.status(404).json({ message: '테이블을 찾을 수 없습니다' });
+    }
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ message: 'url이 필요합니다' });
+    }
+    await printTableQR(table, url);
+    res.json({ message: 'QR 출력 완료' });
+  } catch (error) {
+    if (error.code === 'PRINTER_OFFLINE') {
+      return res.status(503).json({ message: error.message, code: error.code });
+    }
+    res.status(500).json({ message: error.message || 'QR 출력 실패', code: error.code });
   }
 });
 

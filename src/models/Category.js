@@ -6,6 +6,7 @@ const categorySchema = new mongoose.Schema(
     slug: { type: String },
     order: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    isHidden: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

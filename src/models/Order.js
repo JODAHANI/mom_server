@@ -23,6 +23,8 @@ const orderSchema = new mongoose.Schema(
       enum: ['pending', 'accepted', 'preparing', 'ready', 'served', 'cancelled'],
       default: 'pending',
     },
+    servedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    servedAt: { type: Date },
   },
   { timestamps: true }
 );

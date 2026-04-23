@@ -1,13 +1,15 @@
 const express = require('express');
 const Product = require('../models/Product');
+const Category = require('../models/Category');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
 
 // GET /api/products — 상품 목록 조회
+// 기본: 숨김 카테고리에 속한 상품 제외 (고객용). ?includeHidden=true 로 전체(관리자용) 조회.
 router.get('/', async (req, res) => {
   try {
-    const { category, search, channel } = req.query;
+    const { category, search, channel, includeHidden } = req.query;
     const filter = { isActive: true };
 
     // 카테고리 필터
@@ -25,6 +27,27 @@ router.get('/', async (req, res) => {
       filter.showOnKiosk = true;
     } else if (channel === 'table') {
       filter.showOnTable = true;
+    }
+
+    // 숨김 카테고리 cascade: categoryIds 중 하나라도 숨김이면 제외
+    if (!includeHidden) {
+      const hidden = await Category.find(
+        { isHidden: true, isActive: true },
+        '_id'
+      );
+      const hiddenIds = hidden.map((c) => c._id);
+      if (hiddenIds.length > 0) {
+        // 특정 카테고리 요청이 숨김이면 빈 배열 반환
+        if (
+          category &&
+          hiddenIds.some((id) => id.toString() === category.toString())
+        ) {
+          return res.json([]);
+        }
+        filter.categoryIds = category
+          ? { $all: [category], $nin: hiddenIds }
+          : { $nin: hiddenIds };
+      }
     }
 
     const products = await Product.find(filter)

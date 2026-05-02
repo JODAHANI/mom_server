@@ -4,7 +4,7 @@ const Table = require('../models/Table');
 const Product = require('../models/Product');
 const { auth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
-const { printOrderReceipt, printSessionReceipt } = require('../utils/receiptPrinter');
+const { requestPrint } = require('../services/printBridge');
 const { groupOrdersIntoSessions, finalizeSession } = require('../utils/sessionGrouping');
 
 const router = express.Router();
@@ -266,13 +266,16 @@ router.post('/print-session', auth, async (req, res) => {
         ? table.lastClearedAt
         : null;
 
-    await printSessionReceipt(session, { withQR: !!withQR });
+    await requestPrint('session_receipt', {
+      session,
+      opts: { withQR: !!withQR },
+    });
     res.json({ ok: true });
   } catch (error) {
     const code = error.code || 'PRINT_FAILED';
     const statusCode = code === 'PRINTER_OFFLINE' || code === 'PRINTER_NOT_CONFIGURED' ? 503 : 500;
     const messages = {
-      PRINTER_OFFLINE: '프린터를 찾을 수 없습니다. USB 연결을 확인해주세요',
+      PRINTER_OFFLINE: '프린트 에이전트가 연결되어 있지 않습니다. 매장 PC의 에이전트를 확인해주세요',
       PRINTER_NOT_CONFIGURED: '프린터가 설정되지 않았습니다',
       PRINT_FAILED: '영수증 출력에 실패했습니다. 용지·커버·전원을 확인해주세요',
     };
@@ -289,7 +292,7 @@ router.post('/print-session', auth, async (req, res) => {
 // 없으면 table.lastClearedAt 이후를 반환 — 같은 테이블 모든 기기가 동일한 내역을 봄
 router.get('/table/:tableId', async (req, res) => {
   try {
-    const { after } = req.query;
+    const { after, before } = req.query;
     let startTime;
     if (after) {
       startTime = new Date(after);
@@ -302,9 +305,14 @@ router.get('/table/:tableId', async (req, res) => {
         startTime.setHours(0, 0, 0, 0);
       }
     }
+    const createdAtFilter = { $gte: startTime };
+    if (before) {
+      // before: 만료된 손님이 자신의 세션 종료 시점(=expired 감지 시 동결한 lastClearedAt)을 상한으로 보냄
+      createdAtFilter.$lt = new Date(before);
+    }
     const orders = await Order.find({
       tableId: req.params.tableId,
-      createdAt: { $gte: startTime },
+      createdAt: createdAtFilter,
     }).sort({ createdAt: -1 });
     res.json(orders);
   } catch (error) {
@@ -336,14 +344,17 @@ router.post('/:id/print', auth, async (req, res) => {
       return res.status(404).json({ message: '주문을 찾을 수 없습니다' });
     }
 
-    await printOrderReceipt(order, { withQR: !!req.body?.withQR });
+    await requestPrint('order_receipt', {
+      order: order.toObject ? order.toObject() : order,
+      opts: { withQR: !!req.body?.withQR },
+    });
     res.json({ ok: true });
   } catch (error) {
     const code = error.code || 'PRINT_FAILED';
     const statusCode = code === 'PRINTER_OFFLINE' || code === 'PRINTER_NOT_CONFIGURED' ? 503 : 500;
     const messages = {
-      PRINTER_OFFLINE: '프린터를 찾을 수 없습니다. USB 연결과 프린터 이름을 확인해주세요',
-      PRINTER_NOT_CONFIGURED: '프린터가 설정되지 않았습니다 (PRINTER_NAME)',
+      PRINTER_OFFLINE: '프린트 에이전트가 연결되어 있지 않습니다. 매장 PC의 에이전트를 확인해주세요',
+      PRINTER_NOT_CONFIGURED: '프린터가 설정되지 않았습니다',
       PRINT_FAILED: '영수증 출력에 실패했습니다. 용지·커버·전원을 확인해주세요',
     };
     res.status(statusCode).json({

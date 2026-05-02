@@ -3,7 +3,7 @@ const Table = require('../models/Table');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
-const { printTableQR } = require('../utils/receiptPrinter');
+const { requestPrint } = require('../services/printBridge');
 
 const router = express.Router();
 
@@ -127,13 +127,23 @@ router.post('/:id/print-qr', auth, async (req, res) => {
     if (!url) {
       return res.status(400).json({ message: 'url이 필요합니다' });
     }
-    await printTableQR(table, url);
+    await requestPrint('table_qr', {
+      table: table.toObject ? table.toObject() : table,
+      url,
+    });
     res.json({ message: 'QR 출력 완료' });
   } catch (error) {
-    if (error.code === 'PRINTER_OFFLINE') {
-      return res.status(503).json({ message: error.message, code: error.code });
-    }
-    res.status(500).json({ message: error.message || 'QR 출력 실패', code: error.code });
+    const code = error.code || 'PRINT_FAILED';
+    const statusCode = code === 'PRINTER_OFFLINE' ? 503 : 500;
+    const messages = {
+      PRINTER_OFFLINE: '프린트 에이전트가 연결되어 있지 않습니다. 매장 PC의 에이전트를 확인해주세요',
+      PRINT_FAILED: 'QR 출력에 실패했습니다',
+    };
+    res.status(statusCode).json({
+      code,
+      message: messages[code] || error.message || 'QR 출력 실패',
+      error: error.message,
+    });
   }
 });
 

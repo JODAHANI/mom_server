@@ -20,6 +20,7 @@ npm run seed   # DB 초기 데이터 시딩
 - @aws-sdk/client-s3 (이미지 S3 업로드)
 - ws (WebSocket 서버, 30초 heartbeat)
 - cors, dotenv
+- ※ 영수증 출력은 별도 `print-agent/` (USB ESC/POS) — 서버는 WebSocket으로 위임만
 
 ## 환경변수
 
@@ -31,6 +32,7 @@ AWS_REGION=ap-northeast-2
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
 AWS_S3_BUCKET=mom-order-service-admin
+PRINT_AGENT_TOKEN=...        # print-agent/.env와 동일 값. 미설정 시 에이전트 연결 거절
 ```
 
 ## 디렉토리 구조
@@ -51,6 +53,8 @@ server/src/
 │   ├── Table.js       # number, floor, token(32자 hex 자동), isOccupied, lastClearedAt
 │   ├── StaffCall.js   # tableId, tableNumber, floor, status(pending/resolved)
 │   └── Notice.js      # content, isActive
+├── services/
+│   └── printBridge.js # 프린트 에이전트 잡 큐 + ACK 매칭 (requestPrint)
 └── routes/
     ├── auth.js        # POST /register, /login
     ├── admins.js      # 관리자 CRUD (목록/생성/수정/삭제, 자기 자신 삭제 방지)
@@ -65,6 +69,9 @@ server/src/
 scripts/
 └── update-order-status.js  # 주문 ID 접미사로 상태 수동 변경 CLI
 ```
+
+> 영수증 출력은 **별도 프로젝트**: `../print-agent/` (매장 PC에서 상주 실행, 자체 package.json/.env/git)
+> 서버는 USB/프린터 의존성 없음 — printBridge로 WebSocket 위임만 한다
 
 ## API 엔드포인트
 
@@ -99,9 +106,12 @@ scripts/
 ### 주문 (POST, GET table: Public / 나머지: Auth)
 - `POST /api/orders` - 생성 (sessionStartedAt 검증 → 테이블 정리 후면 409 SESSION_EXPIRED, NEW_ORDER 브로드캐스트)
 - `GET /api/orders` - 목록 (status, date, search, pagination)
+- `GET /api/orders/sessions` - 세션 단위 주문내역 (테이블 비우기 경계 기준 그룹핑)
 - `GET /api/orders/table/:tableId` - 테이블 주문 목록 (?after=ISO 지정 시 해당 시각 이후, 미지정 시 당일 0시)
 - `GET /api/orders/:id` - 상세
 - `PATCH /api/orders/:id/status` - 상태 변경 (ORDER_STATUS 브로드캐스트)
+- `POST /api/orders/:id/print` - 영수증 출력 (프린트 에이전트로 위임, 미연결 시 503 PRINTER_OFFLINE)
+- `POST /api/orders/print-session` - 세션 통합 영수증 출력 (orderIds[], withQR)
 
 ### 테이블 (token: Public / 나머지: Auth)
 - `GET /api/tables` - 목록
@@ -109,6 +119,7 @@ scripts/
 - `GET /api/tables/token/:token` - QR 토큰 조회
 - `POST /api/tables` - 추가
 - `PUT /api/tables/:id` - 수정 (lastClearedAt 설정 시 활성 주문 자동 served + TABLE_CLEARED 브로드캐스트)
+- `POST /api/tables/:id/print-qr` - 테이블 QR 영수증 출력 (프린트 에이전트로 위임)
 - `DELETE /api/tables/:id` - 삭제
 
 ### 직원호출 (POST: Public / 나머지: Auth)
@@ -149,6 +160,14 @@ scripts/
 - Bulk reorder: bulkWrite로 순서 일괄 변경
 - Lean queries: 읽기 전용 쿼리에 .lean() 사용
 - Populate: 참조 데이터 자동 조인
+
+### 프린트 에이전트 브릿지
+- 출력은 USB 프린터 → 클라우드(Railway)에 USB가 없으므로 매장 PC의 `print-agent/`가 처리
+- 에이전트는 outbound WebSocket으로 `wss://server/?role=print-agent&token=$PRINT_AGENT_TOKEN` 접속 (NAT/방화벽 무관)
+- 라우트는 `requestPrint(jobType, payload)` 호출 → printBridge가 jobId로 잡 송신 → 에이전트 ACK까지 대기 (기본 30초)
+- 잡 타입: `order_receipt`, `session_receipt`, `table_qr` — 페이로드는 그대로 직렬화 전송
+- 에러 코드: `PRINTER_OFFLINE`(에이전트 미연결/도중 끊김 → 503), `PRINT_FAILED`(에이전트가 실패 응답/타임아웃 → 500)
+- 에이전트 미연결 상태에서는 큐잉하지 않음 — 즉시 503 반환, 어드민이 수동 재시도
 
 ### 테이블 세션 검증
 - 고객 QR 진입 시점을 sessionStartedAt(ISO)으로 클라이언트가 보관

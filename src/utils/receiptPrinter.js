@@ -207,7 +207,7 @@ function buildItemLine(name, qty, price) {
  *  - PRINTER_OFFLINE : USB 장치 없음/오픈 실패 (전원·케이블·VID/PID 확인)
  *  - PRINT_FAILED    : 전송 실패 (용지/커버/권한 등)
  */
-async function printOrderReceipt(order) {
+async function printOrderReceipt(order, opts = {}) {
   // interface는 실제 사용하지 않지만 생성자 요구사항으로 dummy 값 전달
   const printer = new ThermalPrinter({
     type: PrinterTypes.EPSON,
@@ -288,13 +288,32 @@ async function printOrderReceipt(order) {
   printer.bold(false);
   printer.alignLeft();
 
-  printer.newLine();
-  printer.newLine();
-  printer.newLine();
-  printer.alignCenter();
-  printer.println('방문해 주셔서 감사합니다:)');
-  printer.newLine();
-  printer.newLine();
+  if (opts.withQR) {
+    printer.newLine();
+    printer.newLine();
+    printer.alignCenter();
+    printer.printQR('https://m.place.naver.com/my/checkin', {
+      cellSize: 7,
+      correction: 'H',
+      model: 2,
+    });
+    printer.newLine();
+    printer.alignLeft();
+    printer.println('1. 휴대폰 카메라로 QR코드를 찍어주세요');
+    printer.println('2. 화면에 뜨는 주소 누르기');
+    printer.println("3. '영수증' 클릭");
+    printer.println('4. 리뷰 작성 -> 결제 시 보여주세요');
+    printer.newLine();
+    printer.newLine();
+  } else {
+    printer.newLine();
+    printer.newLine();
+    printer.newLine();
+    printer.alignCenter();
+    printer.println('방문해 주셔서 감사합니다:)');
+    printer.newLine();
+    printer.newLine();
+  }
 
   printer.cut();
 
@@ -307,7 +326,7 @@ async function printOrderReceipt(order) {
  * session: { tableNumber, floor, startedAt, endedAt, orderCount, cancelledCount,
  *            items[{name,price,quantity}], totalPrice, cancelledTotal, orderIds[] }
  */
-async function printSessionReceipt(session) {
+async function printSessionReceipt(session, opts = {}) {
   const printer = new ThermalPrinter({
     type: PrinterTypes.EPSON,
     interface: 'tcp://localhost:9999',
@@ -390,13 +409,32 @@ async function printSessionReceipt(session) {
   printer.bold(false);
   printer.alignLeft();
 
-  printer.newLine();
-  printer.newLine();
-  printer.newLine();
-  printer.alignCenter();
-  printer.println('방문해 주셔서 감사합니다:)');
-  printer.newLine();
-  printer.newLine();
+  if (opts.withQR) {
+    printer.newLine();
+    printer.newLine();
+    printer.alignCenter();
+    printer.printQR('https://m.place.naver.com/my/checkin', {
+      cellSize: 7,
+      correction: 'H',
+      model: 2,
+    });
+    printer.newLine();
+    printer.alignLeft();
+    printer.println('1. 휴대폰 카메라로 QR코드를 찍어주세요');
+    printer.println('2. 화면에 뜨는 주소 누르기');
+    printer.println("3. '영수증' 클릭");
+    printer.println('4. 리뷰 작성 -> 결제 시 보여주세요');
+    printer.newLine();
+    printer.newLine();
+  } else {
+    printer.newLine();
+    printer.newLine();
+    printer.newLine();
+    printer.alignCenter();
+    printer.println('방문해 주셔서 감사합니다:)');
+    printer.newLine();
+    printer.newLine();
+  }
 
   printer.cut();
 

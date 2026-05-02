@@ -235,7 +235,7 @@ router.get('/sessions', auth, async (req, res) => {
 // POST /api/orders/print-session — 세션(여러 주문) 통합 영수증 출력
 router.post('/print-session', auth, async (req, res) => {
   try {
-    const { orderIds } = req.body;
+    const { orderIds, withQR } = req.body;
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
       return res.status(400).json({ message: 'orderIds가 필요합니다' });
     }
@@ -266,7 +266,7 @@ router.post('/print-session', auth, async (req, res) => {
         ? table.lastClearedAt
         : null;
 
-    await printSessionReceipt(session);
+    await printSessionReceipt(session, { withQR: !!withQR });
     res.json({ ok: true });
   } catch (error) {
     const code = error.code || 'PRINT_FAILED';
@@ -336,7 +336,7 @@ router.post('/:id/print', auth, async (req, res) => {
       return res.status(404).json({ message: '주문을 찾을 수 없습니다' });
     }
 
-    await printOrderReceipt(order);
+    await printOrderReceipt(order, { withQR: !!req.body?.withQR });
     res.json({ ok: true });
   } catch (error) {
     const code = error.code || 'PRINT_FAILED';

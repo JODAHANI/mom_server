@@ -17,6 +17,7 @@ const productSchema = new mongoose.Schema(
     isSoldOut: { type: Boolean, default: false },
     showOnKiosk: { type: Boolean, default: true },
     showOnTable: { type: Boolean, default: true },
+    showOnAdminOrder: { type: Boolean, default: true },
     order: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
   },

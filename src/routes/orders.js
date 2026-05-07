@@ -290,6 +290,8 @@ router.post('/print-session', auth, async (req, res) => {
 // GET /api/orders/table/:tableId — 테이블별 주문내역 (고객용, 인증 불필요)
 // after 파라미터: 세션 만료 직후 "방금 내 주문" 조회용 (ExpiredScreen 경로)
 // 없으면 table.lastClearedAt 이후를 반환 — 같은 테이블 모든 기기가 동일한 내역을 봄
+// 부등호는 strict(>)로 통일: lastClearedAt은 "새 세션 시작 경계", 그 시각 이후 주문만 새 세션 소속.
+// (admin /tables/status와 동일한 의미 — 두 엔드포인트가 같은 세션 윈도우를 공유)
 router.get('/table/:tableId', async (req, res) => {
   try {
     const { after, before } = req.query;
@@ -305,7 +307,7 @@ router.get('/table/:tableId', async (req, res) => {
         startTime.setHours(0, 0, 0, 0);
       }
     }
-    const createdAtFilter = { $gte: startTime };
+    const createdAtFilter = { $gt: startTime };
     if (before) {
       // before: 만료된 손님이 자신의 세션 종료 시점(=expired 감지 시 동결한 lastClearedAt)을 상한으로 보냄
       createdAtFilter.$lt = new Date(before);

@@ -28,22 +28,37 @@ router.post('/', auth, async (req, res) => {
 });
 
 // GET /api/tables/status — 테이블 현황 + 활성 주문 (인증 필요)
+// 세션 윈도우 = (table.lastClearedAt, now]. 한 번도 비운 적 없으면 (오늘 자정, now].
+// 자정 컷을 별도로 두지 않는 이유: 비우기 안 하고 자정 넘긴 잔여 세션이
+// admin에서 silently 사라지면 직원이 비울 수가 없어 손님 화면에 영구 잔류함.
 router.get('/status', auth, async (req, res) => {
   try {
     const tables = await Table.find().sort({ floor: 1, number: 1 }).lean();
     const activeStatuses = ['pending', 'accepted', 'preparing', 'ready'];
 
-    // 오늘 자정 (로컬 시간) 기준
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const todayOrders = await Order.find({ createdAt: { $gte: todayStart } }).sort({ createdAt: -1 }).lean();
+    const startOf = (t) => (t.lastClearedAt ? new Date(t.lastClearedAt) : todayStart);
+
+    // 모든 테이블 시작점 중 최솟값을 글로벌 컷으로 — DB 쿼리 1회.
+    // 메모리에서 테이블별 startOf로 정밀 컷.
+    const globalMin = tables.reduce(
+      (min, t) => (startOf(t) < min ? startOf(t) : min),
+      todayStart
+    );
+
+    const recentOrders = await Order.find({
+      tableId: { $in: tables.map((t) => t._id) },
+      createdAt: { $gt: globalMin },
+    }).sort({ createdAt: -1 }).lean();
 
     const result = tables.map((table) => {
-      const tableOrders = todayOrders.filter(
+      const startTime = startOf(table);
+      const tableOrders = recentOrders.filter(
         (o) =>
           String(o.tableId) === String(table._id) &&
-          (!table.lastClearedAt || new Date(o.createdAt) > new Date(table.lastClearedAt))
+          new Date(o.createdAt) > startTime
       );
       const activeOrders = tableOrders.filter((o) => activeStatuses.includes(o.status));
       const lastOrderTime = tableOrders.length > 0 ? tableOrders[tableOrders.length - 1].createdAt : null;

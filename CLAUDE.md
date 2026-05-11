@@ -51,7 +51,8 @@ server/src/
 │   ├── Product.js     # name, price, image(S3), categoryIds[], badges[], stock, isSoldOut, showOnKiosk, showOnTable
 │   ├── Order.js       # tableId, items[], totalPrice, status(pending→accepted→preparing→ready→served/cancelled)
 │   ├── Table.js       # number, floor, token(32자 hex 자동), isOccupied, lastClearedAt
-│   ├── StaffCall.js   # tableId, tableNumber, floor, status(pending/resolved)
+│   ├── StaffCall.js   # tableId, tableNumber, floor, items[], status(pending/resolved)
+│   ├── CallItem.js    # name, order, isActive — 관리자에서 호출 항목 관리
 │   └── Notice.js      # content, isActive
 ├── services/
 │   └── printBridge.js # 프린트 에이전트 잡 큐 + ACK 매칭 (requestPrint)
@@ -63,6 +64,7 @@ server/src/
     ├── orders.js      # 생성(세션검증 + WS broadcast), 목록, 상태변경(WS broadcast)
     ├── tables.js      # CRUD + status + token 조회 (lastClearedAt 시 TABLE_CLEARED 브로드캐스트)
     ├── staffCalls.js  # 생성(세션검증 + WS broadcast), 목록, resolve
+    ├── callItems.js   # 호출 항목 CRUD + reorder
     ├── notices.js     # CRUD
     └── upload.js      # S3 이미지 업로드
 
@@ -123,9 +125,16 @@ scripts/
 - `DELETE /api/tables/:id` - 삭제
 
 ### 직원호출 (POST: Public / 나머지: Auth)
-- `POST /api/staff-calls` - 호출 (sessionStartedAt 검증 → 테이블 정리 후면 409 SESSION_EXPIRED, STAFF_CALL 브로드캐스트)
+- `POST /api/staff-calls` - 호출 (body.items[] 선택 항목, sessionStartedAt 검증 → 테이블 정리 후면 409 SESSION_EXPIRED, STAFF_CALL 브로드캐스트)
 - `GET /api/staff-calls` - 대기 목록
 - `PATCH /api/staff-calls/:id/resolve` - 처리 완료
+
+### 호출 항목 (GET: Public / 나머지: Auth)
+- `GET /api/call-items` - 활성 항목 목록 (order 정렬)
+- `POST /api/call-items` - 추가
+- `PUT /api/call-items/:id` - 수정
+- `DELETE /api/call-items/:id` - 삭제 (soft)
+- `PATCH /api/call-items/reorder` - 순서 변경
 
 ### 공지사항 (GET: Public / 나머지: Auth)
 - `GET /api/notices` - 목록
@@ -185,3 +194,4 @@ scripts/
 - 상품 10개: 라멘류, 토핑, 사이드, 음료
 - 테이블 8개: 1층 5개, 2층 3개
 - 관리자: admin@table-home.com / password123
+- 호출 항목 3개: 물, 냅킨, 직원부르기

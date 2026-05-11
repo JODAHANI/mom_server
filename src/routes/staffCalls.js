@@ -9,7 +9,7 @@ const router = express.Router();
 // POST /api/staff-calls — 직원 호출 (고객용, 인증 불필요)
 router.post('/', async (req, res) => {
   try {
-    const { tableId, tableNumber, floor, sessionStartedAt } = req.body;
+    const { tableId, tableNumber, floor, items, sessionStartedAt } = req.body;
 
     const table = await Table.findById(tableId);
     if (!table) {
@@ -26,7 +26,15 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const call = await StaffCall.create({ tableId, tableNumber, floor });
+    const normalizedItems = Array.isArray(items)
+      ? items
+          .filter((v) => typeof v === 'string')
+          .map((v) => v.trim())
+          .filter(Boolean)
+          .slice(0, 20)
+      : [];
+
+    const call = await StaffCall.create({ tableId, tableNumber, floor, items: normalizedItems });
 
     // WebSocket으로 직원 호출 브로드캐스트
     broadcast('STAFF_CALL', call);

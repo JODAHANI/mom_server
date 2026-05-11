@@ -4,6 +4,7 @@ const Category = require('./models/Category');
 const Product = require('./models/Product');
 const Table = require('./models/Table');
 const Admin = require('./models/Admin');
+const CallItem = require('./models/CallItem');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/table-home';
 
@@ -18,6 +19,7 @@ async function seed() {
       Product.deleteMany({}),
       Table.deleteMany({}),
       Admin.deleteMany({}),
+      CallItem.deleteMany({}),
     ]);
     console.log('[Seed] 기존 데이터 삭제 완료');
 
@@ -127,11 +129,20 @@ async function seed() {
     });
     console.log(`[Seed] 관리자 계정 생성 완료: ${admin.email}`);
 
+    // 호출 항목 기본값
+    const callItems = await CallItem.insertMany([
+      { name: '물', order: 0 },
+      { name: '냅킨', order: 1 },
+      { name: '직원부르기', order: 2 },
+    ]);
+    console.log(`[Seed] 호출 항목 ${callItems.length}개 생성 완료`);
+
     console.log('\n[Seed] === 시드 데이터 생성 완료 ===');
     console.log(`  - 카테고리: ${categories.length}개`);
     console.log(`  - 상품: ${products.length}개`);
     console.log(`  - 테이블: ${createdTables.length}개`);
     console.log(`  - 관리자: ${admin.email}`);
+    console.log(`  - 호출 항목: ${callItems.length}개`);
   } catch (error) {
     console.error('[Seed] 에러 발생:', error.message);
   } finally {

@@ -48,10 +48,11 @@ server/src/
 ├── models/
 │   ├── Admin.js       # email(아이디, 대소문자 구분), password(bcrypt), name, role(owner/staff)
 │   ├── Category.js    # name, slug(자동), order, isActive
-│   ├── Product.js     # name, price, image(S3), categoryIds[], badges[], stock, isSoldOut, showOnKiosk, showOnTable
-│   ├── Order.js       # tableId, items[], totalPrice, status(pending→accepted→preparing→ready→served/cancelled)
+│   ├── Product.js     # name, price, image(S3), categoryIds[], badges[], variants[], stock, isSoldOut, showOnKiosk, showOnTable
+│                      # variants[{name, price?, isSoldOut}] — 종류 선택형(소주/맥주) 상품. price null이면 기본가 폴백
+│   ├── Order.js       # tableId, items[{productId,name,variantName,price,quantity}], totalPrice, status(pending→accepted→preparing→ready→served/cancelled)
 │   ├── Table.js       # number, floor, token(32자 hex 자동), isOccupied, lastClearedAt
-│   ├── StaffCall.js   # tableId, tableNumber, floor, items[], status(pending/resolved)
+│   ├── StaffCall.js   # tableId, tableNumber, floor, items[], status(pending/resolved), resolvedBy, resolvedAt
 │   ├── CallItem.js    # name, order, isActive — 관리자에서 호출 항목 관리
 │   └── Notice.js      # content, isActive
 ├── services/
@@ -126,8 +127,9 @@ scripts/
 
 ### 직원호출 (POST: Public / 나머지: Auth)
 - `POST /api/staff-calls` - 호출 (body.items[] 선택 항목, sessionStartedAt 검증 → 테이블 정리 후면 409 SESSION_EXPIRED, STAFF_CALL 브로드캐스트)
-- `GET /api/staff-calls` - 대기 목록
-- `PATCH /api/staff-calls/:id/resolve` - 처리 완료
+- `GET /api/staff-calls` - 대기 목록 (status: pending)
+- `GET /api/staff-calls/history` - 호출 내역 (status/startDate/endDate/tableNumber/floor/page/limit 필터, resolvedBy populate)
+- `PATCH /api/staff-calls/:id/resolve` - 처리 완료 (resolvedBy=req.user._id, resolvedAt=now)
 
 ### 호출 항목 (GET: Public / 나머지: Auth)
 - `GET /api/call-items` - 활성 항목 목록 (order 정렬)
@@ -177,6 +179,14 @@ scripts/
 - 잡 타입: `order_receipt`, `session_receipt`, `table_qr` — 페이로드는 그대로 직렬화 전송
 - 에러 코드: `PRINTER_OFFLINE`(에이전트 미연결/도중 끊김 → 503), `PRINT_FAILED`(에이전트가 실패 응답/타임아웃 → 500)
 - 에이전트 미연결 상태에서는 큐잉하지 않음 — 즉시 503 반환, 어드민이 수동 재시도
+
+### 상품 변형 (variants)
+- 종류 선택이 필요한 상품(소주, 맥주 등)은 `Product.variants[]`에 항목 등록
+- 주문 생성 시 클라가 `variantName`을 함께 보내면 서버가 매칭 + 가격 스냅샷
+  - variant에 price가 설정돼 있으면 그 가격, 없으면 product.price 폴백
+  - 매칭 실패(rename/삭제) 시 빈 variantName + product.price로 graceful 폴백
+- 영수증/내역은 `${name} (${variantName})` 형태로 표시 — print-agent의 itemDisplayName이 처리
+- 세션 집계(sessionGrouping.aggregateItems)는 (name, variantName, price) 조합별 수량 합산
 
 ### 테이블 세션 검증
 - 고객 QR 진입 시점을 sessionStartedAt(ISO)으로 클라이언트가 보관

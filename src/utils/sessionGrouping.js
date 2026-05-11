@@ -9,14 +9,15 @@
  */
 
 function aggregateItems(orders) {
-  // 취소가 아닌 주문들의 아이템을 (name, price)별로 수량 합산
+  // 취소가 아닌 주문들의 아이템을 (name, variantName, price)별로 수량 합산
   const map = new Map();
   for (const order of orders) {
     if (order.status === 'cancelled') continue;
     for (const item of order.items || []) {
-      const key = `${item.name}__${item.price}`;
+      const variantName = item.variantName || '';
+      const key = `${item.name}__${variantName}__${item.price}`;
       if (!map.has(key)) {
-        map.set(key, { name: item.name, price: item.price, quantity: 0 });
+        map.set(key, { name: item.name, variantName, price: item.price, quantity: 0 });
       }
       map.get(key).quantity += item.quantity || 0;
     }

@@ -56,10 +56,22 @@ router.post('/', async (req, res) => {
     const safeItems = items.map((item) => {
       const pid = item.productId || item.product;
       const p = pid ? priceMap.get(String(pid)) : null;
+      const variantName = typeof item.variantName === 'string' ? item.variantName.trim() : '';
+      // variants가 있는 상품이면 클라가 보낸 variantName과 일치하는 항목의 가격을 스냅샷
+      // 매치 실패 시 빈 문자열(기본 상품)로 강등 — 가격은 product.price 폴백
+      let variant = null;
+      if (p && Array.isArray(p.variants) && p.variants.length > 0 && variantName) {
+        variant = p.variants.find((v) => v.name === variantName) || null;
+      }
+      const resolvedVariantName = variant ? variant.name : '';
+      const resolvedPrice = variant && variant.price != null
+        ? variant.price
+        : (p ? p.price : item.price);
       return {
         productId: pid,
         name: p?.name || item.name,
-        price: p ? p.price : item.price,
+        variantName: resolvedVariantName,
+        price: resolvedPrice,
         quantity: item.quantity,
       };
     });
